@@ -1,0 +1,10 @@
+fun main() {
+	hello()
+	world()
+}
+
+fun hello() {}
+
+fun world() {
+	exit 123
+}

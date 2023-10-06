@@ -1,7 +1,15 @@
-use crate::compiler::lexer::Lexer;
+use std::arch::asm;
+use std::collections::VecDeque;
 
-mod token;
+use anyhow::Result;
+use crate::compiler::cg::nasm::NasmCodegen;
+
+use crate::compiler::lexer::Lexer;
+use crate::compiler::parser::Parser;
+
 mod lexer;
+mod parser;
+mod cg;
 
 // TODO add compiler options/flags
 #[derive(Debug)] // is this necessary?
@@ -12,13 +20,25 @@ impl YYNCompiler {
         Self {}
     }
 
-    pub fn compile(&self, src_code: &str) -> String {
+    pub fn compile(&self, src_code: &str) -> Result<String> {
         let lexer = Lexer::new(src_code);
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = lexer.tokenize()?;
 
-        // print tokens for now
+        println!("----------- Tokens -----------");
         println!("{tokens:?}");
 
-        todo!("Parse tokens into AST & generate LLVM from AST");
+        let parser = Parser::new(VecDeque::from(tokens));
+        let ast = parser.parse_root()?;
+
+        println!("------------ AST -------------");
+        println!("{ast:?}");
+
+        let codegen = NasmCodegen::new(ast);
+        let asm_code = codegen.generate()?;
+
+        println!("---------- Assembly ----------");
+        println!("{asm_code}");
+
+        Ok(asm_code)
     }
 }

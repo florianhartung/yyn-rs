@@ -2,8 +2,9 @@ use std::iter;
 
 use anyhow::{bail, Result};
 
-use crate::compiler::token;
-use crate::compiler::token::Token;
+use token::Token;
+
+pub mod token;
 
 pub struct Lexer<'a> {
     remaining_src_code: &'a str,
@@ -43,9 +44,31 @@ impl<'a> Lexer<'a> {
     }
 
     fn skip_whitespaces(&mut self) {
-        while self.peek_char().map_or(false, |c| c.is_whitespace() && c != '\n' && c != '\r') {
-            self.eat_char();
+        while let Some(c) = self.peek_char() {
+            if c.is_whitespace() && c != '\n' && c != '\r' {
+                self.eat_char();
+            } else {
+                break;
+            }
         }
+    }
+
+    fn try_read_number(&mut self) -> Option<u32> {
+        self.peek_char().filter(|c| c.is_numeric()).map(|first_char| {
+            let _ = self.eat_char();
+            let mut number_value = String::from(first_char);
+
+            while let Some(c) = self.peek_char() {
+                if c.is_numeric() {
+                    let _ = self.eat_char();
+                    number_value.push(c);
+                } else {
+                    break;
+                }
+            }
+
+            number_value.parse::<u32>().expect("number to be valid because it consists of only numerics")
+        })
     }
 
     fn try_read_identifier(&mut self) -> Option<String> {
@@ -85,6 +108,9 @@ impl<'a> Lexer<'a> {
         }
 
         // TODO try_read_number
+        if let Some(number) = self.try_read_number() {
+            return Ok(Some(Number(number)));
+        }
 
         // Read all other token types
         self.eat_char().map(|c| {
@@ -116,7 +142,8 @@ impl<'a> Lexer<'a> {
 mod tests {
     use anyhow::Result;
 
-    use crate::compiler::lexer::Lexer;
+    use crate::compiler::lexer::{Lexer, token};
+    use crate::compiler::lexer::token::Token;
     use crate::compiler::token::{Keyword, Token};
 
     #[test]
@@ -158,7 +185,7 @@ mod tests {
     pub fn empty_main() -> Result<()> {
         let mut lexer = Lexer::new("fun main() {\n}");
 
-        assert_eq!(lexer.next_token()?, Some(Token::Keyword(Keyword::Fun)));
+        assert_eq!(lexer.next_token()?, Some(Token::Keyword(token::Keyword::Fun)));
         assert_eq!(lexer.next_token()?, Some(Token::Identifier("main".to_owned())));
         assert_eq!(lexer.next_token()?, Some(Token::LeftParentheses));
         assert_eq!(lexer.next_token()?, Some(Token::RightParentheses));

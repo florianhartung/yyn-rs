@@ -1,7 +1,7 @@
 #[derive(Debug, PartialEq)]
 pub enum Keyword {
     Fun,
-    Exit69, // Exits the program with exit code 69
+    Exit, // Exits the program with exit code 1
 }
 
 impl Keyword {
@@ -10,7 +10,7 @@ impl Keyword {
 
         match s {
             "fun" => Some(Fun),
-            "exit69" => Some(Exit69),
+            "exit" => Some(Exit),
             _ => None,
         }
     }
@@ -23,6 +23,7 @@ pub enum Token {
     Keyword(Keyword),
     // TODO will be identifiers at beginning
     Identifier(String),
+    Number(u32),
     LeftBrace,
     RightBrace,
     LeftParentheses,
