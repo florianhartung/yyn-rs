@@ -6,16 +6,19 @@ use crate::compiler::lexer::token::{Keyword, Token};
 
 pub mod ast;
 
+pub fn parse(tokens: Vec<Token>) -> Result<ast::Root> {
+    let parser = Parser {
+        tokens: VecDeque::from(tokens),
+    };
+
+    parser.parse_root()
+}
 
 pub struct Parser {
     tokens: VecDeque<Token>,
 }
 
 impl Parser {
-    pub fn new(tokens: VecDeque<Token>) -> Self {
-        Self { tokens }
-    }
-
     fn peek_token(&self) -> Option<&Token> {
         self.tokens.iter().next()
     }
@@ -25,7 +28,9 @@ impl Parser {
     }
 
     fn expect_token(&mut self, expected: Token) -> Result<()> {
-        let token = self.eat_token().ok_or_else(|| anyhow!("Expected token `{expected:?}, reached end of token stream instead`"))?;
+        let token = self.eat_token().ok_or_else(|| {
+            anyhow!("Expected token `{expected:?}, reached end of token stream instead`")
+        })?;
 
         if token != expected {
             bail!("Expected token `{expected:?}`, got `{token:?}` instead")
@@ -62,9 +67,7 @@ impl Parser {
             expressions.push(expr);
         }
 
-        Ok(ast::CompoundExpr {
-            expressions
-        })
+        Ok(ast::CompoundExpr { expressions })
     }
 
     fn parse_function_def(&mut self) -> Result<ast::FunctionDefinition> {
@@ -81,10 +84,7 @@ impl Parser {
 
         let compound = self.parse_compound()?;
 
-        Ok(ast::FunctionDefinition {
-            name,
-            compound,
-        })
+        Ok(ast::FunctionDefinition { name, compound })
     }
 
     fn skip_newlines(&mut self) {
@@ -93,7 +93,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_root(mut self) -> Result<ast::Root> {
+    fn parse_root(mut self) -> Result<ast::Root> {
         let mut functions = Vec::new();
         loop {
             self.skip_newlines();
@@ -108,7 +108,7 @@ impl Parser {
 
         Ok(ast::Root {
             function_names,
-            functions
+            functions,
         })
     }
 }

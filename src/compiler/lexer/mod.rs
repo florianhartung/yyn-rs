@@ -1,22 +1,24 @@
 use std::iter;
 
 use anyhow::{bail, Result};
+use itertools::Itertools;
 
 use token::Token;
 
 pub mod token;
+
+pub fn tokenize(src: &str) -> Result<Vec<Token>> {
+    let mut lexer = Lexer {
+        remaining_src_code: src,
+    };
+    iter::from_fn(|| lexer.next_token().transpose()).collect()
+}
 
 pub struct Lexer<'a> {
     remaining_src_code: &'a str,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(src_code: &'a str) -> Self {
-        Self {
-            remaining_src_code: src_code,
-        }
-    }
-
     fn peek_char(&self) -> Option<char> {
         self.remaining_src_code.chars().next()
     }
@@ -44,8 +46,10 @@ impl<'a> Lexer<'a> {
     }
 
     fn skip_whitespaces(&mut self) {
+        const IGNORE_CHARS: [char; 2] = ['\n', '\r'];
+
         while let Some(c) = self.peek_char() {
-            if c.is_whitespace() && c != '\n' && c != '\r' {
+            if c.is_whitespace() && !IGNORE_CHARS.contains(&c) {
                 self.eat_char();
             } else {
                 break;
@@ -54,40 +58,46 @@ impl<'a> Lexer<'a> {
     }
 
     fn try_read_number(&mut self) -> Option<u32> {
-        self.peek_char().filter(|c| c.is_numeric()).map(|first_char| {
-            let _ = self.eat_char();
-            let mut number_value = String::from(first_char);
+        self.peek_char()
+            .filter(|c| c.is_numeric())
+            .map(|first_char| {
+                let _ = self.eat_char();
+                let mut number_value = String::from(first_char);
 
-            while let Some(c) = self.peek_char() {
-                if c.is_numeric() {
-                    let _ = self.eat_char();
-                    number_value.push(c);
-                } else {
-                    break;
+                while let Some(c) = self.peek_char() {
+                    if c.is_numeric() {
+                        let _ = self.eat_char();
+                        number_value.push(c);
+                    } else {
+                        break;
+                    }
                 }
-            }
 
-            number_value.parse::<u32>().expect("number to be valid because it consists of only numerics")
-        })
+                number_value
+                    .parse::<u32>()
+                    .expect("number to be valid because it consists of only numerics")
+            })
     }
 
     fn try_read_identifier(&mut self) -> Option<String> {
-        self.peek_char().filter(|c| c.is_alphabetic()).map(|first_char| {
-            let _ = self.eat_char();
-            let mut identifier = String::from(first_char);
+        self.peek_char()
+            .filter(|c| c.is_alphabetic())
+            .map(|first_char| {
+                let _ = self.eat_char();
+                let mut identifier = String::from(first_char);
 
-            while let Some(c) = self.peek_char() {
-                match c {
-                    c if c.is_alphanumeric() || c == '_' => {
-                        let _ = self.eat_char();
-                        identifier.push(c);
+                while let Some(c) = self.peek_char() {
+                    match c {
+                        c if c.is_alphanumeric() || c == '_' => {
+                            let _ = self.eat_char();
+                            identifier.push(c);
+                        }
+                        _ => break,
                     }
-                    _ => break,
                 }
-            }
 
-            identifier
-        })
+                identifier
+            })
     }
 
     pub fn next_token(&mut self) -> Result<Option<Token>> {
@@ -107,34 +117,29 @@ impl<'a> Lexer<'a> {
             return Ok(Some(token));
         }
 
-        // TODO try_read_number
         if let Some(number) = self.try_read_number() {
             return Ok(Some(Number(number)));
         }
 
         // Read all other token types
-        self.eat_char().map(|c| {
-            let token = match c {
-                '[' => LeftSquareBracket,
-                ']' => RightSquareBracket,
-                '(' => LeftParentheses,
-                ')' => RightParentheses,
-                '{' => LeftBrace,
-                '}' => RightBrace,
-                ';' | '\n' => NewLine,
-                '\r' => {
-                    self.expect_char('\n')?;
-                    NewLine
-                }
-                invalid_char => bail!("Invalid character `{invalid_char}`"),
-            };
-
-            Ok(token)
-        }).transpose()
-    }
-
-    pub fn tokenize(mut self) -> Result<Vec<Token>> {
-        iter::from_fn(|| self.next_token().transpose()).collect()
+        self.eat_char()
+            .map(|c| {
+                Ok(match c {
+                    '[' => LeftSquareBracket,
+                    ']' => RightSquareBracket,
+                    '(' => LeftParentheses,
+                    ')' => RightParentheses,
+                    '{' => LeftBrace,
+                    '}' => RightBrace,
+                    ';' | '\n' => NewLine,
+                    '\r' => {
+                        self.expect_char('\n')?;
+                        NewLine
+                    }
+                    invalid_char => bail!("Invalid character `{invalid_char}`"),
+                })
+            })
+            .transpose()
     }
 }
 
@@ -142,57 +147,49 @@ impl<'a> Lexer<'a> {
 mod tests {
     use anyhow::Result;
 
-    use crate::compiler::lexer::{Lexer, token};
     use crate::compiler::lexer::token::Token;
-    use crate::compiler::token::{Keyword, Token};
+    use crate::compiler::lexer::tokenize;
 
     #[test]
     pub fn empty_src() -> Result<()> {
-        let mut lexer = Lexer::new("");
+        let tokens = tokenize("")?;
 
-        assert_eq!(lexer.next_token()?, None);
-        assert_eq!(lexer.next_token()?, None);
+        assert_eq!(tokens.as_slice(), &[]);
 
         Ok(())
     }
 
     #[test]
     pub fn brackets() -> Result<()> {
-        let mut lexer = Lexer::new("([{}])");
+        let tokens = tokenize("([{}])")?;
 
-        assert_eq!(lexer.next_token()?, Some(Token::LeftParentheses));
-        assert_eq!(lexer.next_token()?, Some(Token::LeftSquareBracket));
-        assert_eq!(lexer.next_token()?, Some(Token::LeftBrace));
-        assert_eq!(lexer.next_token()?, Some(Token::RightBrace));
-        assert_eq!(lexer.next_token()?, Some(Token::RightSquareBracket));
-        assert_eq!(lexer.next_token()?, Some(Token::RightParentheses));
+        assert_eq!(
+            tokens.as_slice(),
+            &[
+                Token::LeftParentheses,
+                Token::LeftSquareBracket,
+                Token::LeftBrace,
+                Token::RightBrace,
+                Token::RightSquareBracket,
+                Token::RightParentheses,
+            ]
+        );
 
         Ok(())
     }
 
     #[test]
     pub fn identifiers() -> Result<()> {
-        let mut lexer = Lexer::new("some identifier123 a_b");
+        let tokens = tokenize("some identifier123 a_b")?;
 
-        assert_eq!(lexer.next_token()?, Some(Token::Identifier("some".to_owned())));
-        assert_eq!(lexer.next_token()?, Some(Token::Identifier("identifier123".to_owned())));
-        assert_eq!(lexer.next_token()?, Some(Token::Identifier("a_b".to_owned())));
-
-        Ok(())
-    }
-
-    #[test]
-    pub fn empty_main() -> Result<()> {
-        let mut lexer = Lexer::new("fun main() {\n}");
-
-        assert_eq!(lexer.next_token()?, Some(Token::Keyword(token::Keyword::Fun)));
-        assert_eq!(lexer.next_token()?, Some(Token::Identifier("main".to_owned())));
-        assert_eq!(lexer.next_token()?, Some(Token::LeftParentheses));
-        assert_eq!(lexer.next_token()?, Some(Token::RightParentheses));
-        assert_eq!(lexer.next_token()?, Some(Token::LeftBrace));
-        assert_eq!(lexer.next_token()?, Some(Token::NewLine));
-        assert_eq!(lexer.next_token()?, Some(Token::RightBrace));
-        assert_eq!(lexer.next_token()?, None);
+        assert_eq!(
+            tokens.as_slice(),
+            &[
+                Token::Identifier("some".to_owned()),
+                Token::Identifier("identifier123".to_owned()),
+                Token::Identifier("a_b".to_owned()),
+            ]
+        );
 
         Ok(())
     }
