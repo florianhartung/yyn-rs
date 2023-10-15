@@ -6,12 +6,12 @@ pub struct Root {
 
 #[derive(Debug)]
 pub struct CompoundExpr {
-    pub(crate) expressions: Vec<Expr>,
+    pub expressions: Vec<Expr>,
 }
 
 #[derive(Debug)]
 pub enum Expr {
-    Compound(Vec<Box<Expr>>),
+    Compound(Box<CompoundExpr>),
     Exit(u32),
     FnCall(String),
 }

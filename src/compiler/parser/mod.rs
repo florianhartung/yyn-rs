@@ -45,6 +45,11 @@ impl Parser {
         let mut expressions = Vec::new();
 
         loop {
+            if let Some(Token::LeftBrace) = self.peek_token() {
+                let sub_compound = self.parse_compound()?;
+                expressions.push(ast::Expr::Compound(Box::new(sub_compound)));
+            }
+
             let expr = match self.eat_token() {
                 Some(Token::Keyword(Keyword::Exit)) => {
                     if let Some(Token::Number(exit_code)) = self.eat_token() {

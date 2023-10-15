@@ -1,7 +1,7 @@
 #[derive(Debug, PartialEq)]
 pub enum Keyword {
     Fun,
-    Exit, // Exits the program with exit code 1
+    Exit,
     Int,
 }
 
@@ -17,7 +17,6 @@ impl Keyword {
         }
     }
 }
-
 
 // TODO add location information (line:column)
 #[derive(Debug, PartialEq)]
