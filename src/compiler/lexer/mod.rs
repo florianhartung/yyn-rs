@@ -132,6 +132,10 @@ impl<'a> Lexer<'a> {
                     '{' => LeftBrace,
                     '}' => RightBrace,
                     ';' | '\n' => NewLine,
+                    '-' => {
+                        self.expect_char('>')?;
+                        RightArrow
+                    }
                     '\r' => {
                         self.expect_char('\n')?;
                         NewLine

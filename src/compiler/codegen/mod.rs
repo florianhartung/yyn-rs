@@ -1,16 +1,17 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
-use inkwell::types::BasicMetadataTypeEnum;
-use inkwell::values::BasicMetadataValueEnum;
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 
-use crate::compiler::parser::ast::{CompoundExpr, Expr, FunctionDefinition, Root};
+use crate::compiler::parser::ast;
+use crate::compiler::parser::ast::{CompoundExpr, Expr, FunctionDefinition, Root, Type};
 
 pub fn generate(ast_root: Root, llvm_ir_out: &Path) -> Result<()> {
     let context = Context::create();
+
     let builder = context.create_builder();
     let module = context.create_module("main_module");
 
@@ -46,28 +47,60 @@ impl Root {
 
 impl FunctionDefinition {
     fn codegen(self, codegen: &CodeGen) -> Result<()> {
-        let fn_ty = codegen.context.void_type().fn_type(&[], false);
+        let return_ty = self.return_ty.as_llvm_type(codegen);
+
+        let param_types = &[];
+        let is_var_args = false;
+
+        let fn_ty = return_ty.map_or_else(
+            || {
+                codegen
+                    .context
+                    .void_type()
+                    .fn_type(param_types, is_var_args)
+            },
+            |ty| ty.fn_type(param_types, is_var_args),
+        );
         let fn_value = codegen.module.add_function(&self.name, fn_ty, None);
-        let block = codegen
-            .context
-            .append_basic_block(fn_value, "function_start");
+
+        let block = codegen.context.append_basic_block(fn_value, "fn_start");
         codegen.builder.position_at_end(block);
+        let actual_ret_ty = self.compound.codegen(codegen)?;
 
-        self.compound.codegen(codegen)?;
-
-        codegen.builder.build_return(None)?;
+        if actual_ret_ty != return_ty {
+            bail!(
+                "Expected function '{}' to return type '{:?}', but it actually returns a '{:?}'",
+                &self.name,
+                return_ty,
+                actual_ret_ty,
+            );
+        }
 
         Ok(())
     }
 }
 
 impl CompoundExpr {
-    fn codegen(self, codegen: &CodeGen) -> Result<()> {
-        self.expressions
-            .into_iter()
-            .map(|e| e.codegen(codegen))
-            .collect()
+    /// Returns the type of value returned by this, `None` if this compound does not contain a return statement
+    fn codegen<'ctx>(self, codegen: &CodeGen<'ctx>) -> Result<Option<BasicTypeEnum<'ctx>>> {
+        for e in self.expressions {
+            match e {
+                Expr::Return(num) => return Ok(Some(generate_return_expression(codegen, num)?)),
+                other => other.codegen(codegen)?,
+            }
+        }
+        Ok(None)
     }
+}
+
+fn generate_return_expression<'ctx>(
+    codegen: &CodeGen<'ctx>,
+    value: u32,
+) -> Result<BasicTypeEnum<'ctx>> {
+    let return_ty = codegen.context.i32_type();
+    let return_val = return_ty.const_int(value as u64, false);
+    codegen.builder.build_return(Some(&return_val))?;
+    Ok(return_ty.into())
 }
 
 impl Expr {
@@ -99,6 +132,18 @@ impl Expr {
             Expr::FnCall(_) => {
                 todo!("call function")
             }
+            Expr::Return(_) => {
+                unimplemented!("return expression is not handled in this function")
+            }
+        }
+    }
+}
+
+impl ast::Type {
+    fn as_llvm_type<'ctx>(&self, codegen: &CodeGen<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+        match self {
+            Type::Int => Some(codegen.context.i32_type().into()),
+            Type::Unit => None,
         }
     }
 }

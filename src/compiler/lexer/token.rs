@@ -3,6 +3,7 @@ pub enum Keyword {
     Fun,
     Exit,
     Int,
+    Return,
 }
 
 impl Keyword {
@@ -13,6 +14,7 @@ impl Keyword {
             "fun" => Some(Fun),
             "exit" => Some(Exit),
             "int" => Some(Int),
+            "return" => Some(Return),
             _ => None,
         }
     }
@@ -31,4 +33,5 @@ pub enum Token {
     LeftSquareBracket,
     RightSquareBracket,
     NewLine,
+    RightArrow,
 }

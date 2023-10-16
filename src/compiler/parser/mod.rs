@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use anyhow::{anyhow, bail, Result};
 
 use crate::compiler::lexer::token::{Keyword, Token};
+use crate::compiler::parser::ast::Type;
 
 pub mod ast;
 
@@ -39,6 +40,10 @@ impl Parser {
         Ok(())
     }
 
+    fn has_tokens(&self) -> bool {
+        self.peek_token().is_some()
+    }
+
     fn parse_compound(&mut self) -> Result<ast::CompoundExpr> {
         self.expect_token(Token::LeftBrace)?;
 
@@ -65,6 +70,12 @@ impl Parser {
                     self.expect_token(Token::RightParentheses)?;
                     ast::Expr::FnCall(fn_name)
                 }
+                Some(Token::Keyword(Keyword::Return)) => {
+                    let Some(Token::Number(num)) = self.eat_token() else {
+                        bail!("Expected number after return statement");
+                    };
+                    ast::Expr::Return(num)
+                }
                 Some(other) => bail!("Got invalid token `{other:?}` in compound expression"),
                 None => bail!("Expected token, reached end of token stream instead"),
             };
@@ -73,6 +84,21 @@ impl Parser {
         }
 
         Ok(ast::CompoundExpr { expressions })
+    }
+
+    fn parse_type(&mut self) -> Result<ast::Type> {
+        let Some(tok) = self.eat_token() else {
+            bail!("Expected token for type definition");
+        };
+
+        Ok(match tok {
+            Token::Keyword(Keyword::Int) => ast::Type::Int,
+            Token::LeftParentheses => {
+                self.expect_token(Token::RightParentheses)?;
+                ast::Type::Unit
+            }
+            other => bail!("Expected type token, got {other:?}"),
+        })
     }
 
     fn parse_function_def(&mut self) -> Result<ast::FunctionDefinition> {
@@ -87,9 +113,23 @@ impl Parser {
         self.expect_token(Token::LeftParentheses)?;
         self.expect_token(Token::RightParentheses)?;
 
+        let return_ty = match self.peek_token() {
+            Some(Token::RightArrow) => {
+                let _ = self.eat_token();
+                self.parse_type()?
+            }
+            Some(Token::LeftBrace) => Type::Unit,
+            Some(other) => bail!("Expected function return type, got {other:?} instead"),
+            None => bail!("Expected function return type, reached end of token stream instead"),
+        };
+
         let compound = self.parse_compound()?;
 
-        Ok(ast::FunctionDefinition { name, compound })
+        Ok(ast::FunctionDefinition {
+            name,
+            compound,
+            return_ty,
+        })
     }
 
     fn skip_newlines(&mut self) {
@@ -102,11 +142,11 @@ impl Parser {
         let mut functions = Vec::new();
         loop {
             self.skip_newlines();
-            if let Some(tok) = self.peek_token() {
-                functions.push(self.parse_function_def()?);
-            } else {
+            if !self.has_tokens() {
                 break;
             }
+
+            functions.push(self.parse_function_def()?);
         }
 
         let function_names: Vec<String> = functions.iter().map(|f| f.name.clone()).collect();
