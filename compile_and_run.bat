@@ -1,7 +1,7 @@
 @echo off
 
 :: Examples: empty, exitwithcode, functions
-set example_name=exitwithcode
+set example_name=functions
 
 echo Building compiler project
 cargo build

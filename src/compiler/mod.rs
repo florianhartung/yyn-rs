@@ -1,8 +1,8 @@
-use std::fs::File;
 use std::path::Path;
 
 use anyhow::{Context, Result};
 
+mod ast_analyzer;
 mod codegen;
 mod lexer;
 mod parser;
@@ -18,5 +18,7 @@ pub fn compile(src: &Path, llvm_ir_out: &Path) -> Result<()> {
     let ast_root = parser::parse(tokens)?;
     dbg!(&ast_root);
 
-    codegen::generate(ast_root, &llvm_ir_out)
+    let analyzed_ast_root = ast_analyzer::analyze_ast(ast_root)?;
+
+    codegen::generate(analyzed_ast_root, &llvm_ir_out)
 }

@@ -149,11 +149,6 @@ impl Parser {
             functions.push(self.parse_function_def()?);
         }
 
-        let function_names: Vec<String> = functions.iter().map(|f| f.name.clone()).collect();
-
-        Ok(ast::Root {
-            function_names,
-            functions,
-        })
+        Ok(ast::Root { functions })
     }
 }

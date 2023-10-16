@@ -1,10 +1,13 @@
-fun main() {
+
+fun main() -> int {
 	hello()
 	world()
+	return 333
 }
+
 
 fun hello() {}
 
 fun world() {
-	exit 123
+	exit 222
 }

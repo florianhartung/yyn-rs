@@ -1,6 +1,5 @@
 #[derive(Debug)]
 pub struct Root {
-    pub(crate) function_names: Vec<String>,
     pub(crate) functions: Vec<FunctionDefinition>,
 }
 
@@ -24,7 +23,7 @@ pub struct FunctionDefinition {
     pub(crate) return_ty: Type,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Type {
     Unit,
     Int,

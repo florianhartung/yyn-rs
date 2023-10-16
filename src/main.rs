@@ -1,7 +1,6 @@
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::env;
+use std::path::PathBuf;
 use std::process::exit;
-use std::{env, fs};
 
 mod compiler;
 

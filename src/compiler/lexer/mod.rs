@@ -1,7 +1,6 @@
 use std::iter;
 
 use anyhow::{bail, Result};
-use itertools::Itertools;
 
 use token::Token;
 
