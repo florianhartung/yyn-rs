@@ -1,6 +1,6 @@
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType, VoidType};
 
-use crate::compiler::codegen::Cx;
+use crate::compiler::codegen::CodegenContext;
 use crate::compiler::parser::ast;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -21,7 +21,17 @@ impl<'ctx> Type<'ctx> {
         }
     }
 
-    pub fn from_ast_type(ast_ty: &ast::Type, codegen: &Cx<'ctx>) -> Self {
+    pub fn to_basic_type_enum(&self) -> Option<BasicTypeEnum<'ctx>> {
+        match self {
+            Type::BasicType(ty) => Some(*ty),
+            Type::Void(_) => None,
+        }
+    }
+
+    pub fn from_ast_type<'a, 'b>(
+        ast_ty: &'a ast::Type,
+        codegen: &'b CodegenContext<'ctx>,
+    ) -> Type<'ctx> {
         match ast_ty {
             ast::Type::Unit => Self::Void(codegen.context.void_type()),
             ast::Type::Int => Self::BasicType(codegen.context.i32_type().as_basic_type_enum()),
@@ -30,7 +40,10 @@ impl<'ctx> Type<'ctx> {
 }
 
 impl ast::Type {
-    fn as_llvm_type<'ctx>(&self, codegen: &Cx<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+    pub fn as_llvm_type<'ctx>(
+        &self,
+        codegen: &CodegenContext<'ctx>,
+    ) -> Option<BasicTypeEnum<'ctx>> {
         match self {
             ast::Type::Int => Some(codegen.context.i32_type().into()),
             ast::Type::Unit => None,
@@ -44,7 +57,7 @@ pub enum CompoundReturnType<'ctx> {
 }
 
 impl<'ctx> CompoundReturnType<'ctx> {
-    pub fn into_type(self, codegen: &Cx<'ctx>) -> Type<'ctx> {
+    pub fn into_type(self, codegen: &CodegenContext<'ctx>) -> Type<'ctx> {
         match self {
             CompoundReturnType::Explicit(ty) => ty,
             CompoundReturnType::ImplicitUnit => Type::Void(codegen.context.void_type()),

@@ -4,12 +4,14 @@ use anyhow::{anyhow, bail, Result};
 
 use crate::compiler::lexer::token::{Keyword, Token};
 use crate::compiler::parser::ast::Type;
+use crate::compiler::symbol_table::{Function, Sym};
 
 pub mod ast;
 
-pub fn parse(tokens: Vec<Token>) -> Result<ast::Root> {
+pub fn parse(tokens: Vec<Token>, sym: Sym) -> Result<ast::Root> {
     let parser = Parser {
         tokens: VecDeque::from(tokens),
+        sym,
     };
 
     parser.parse_root()
@@ -17,6 +19,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<ast::Root> {
 
 pub struct Parser {
     tokens: VecDeque<Token>,
+    sym: Sym,
 }
 
 impl Parser {
@@ -123,12 +126,13 @@ impl Parser {
             None => bail!("Expected function return type, reached end of token stream instead"),
         };
 
+        let sym_ref = self.sym.add_function(Function::new(name, return_ty))?;
+
         let compound = self.parse_compound()?;
 
         Ok(ast::FunctionDefinition {
-            name,
             compound,
-            return_ty,
+            sym: sym_ref,
         })
     }
 

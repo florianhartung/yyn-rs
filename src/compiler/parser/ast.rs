@@ -1,3 +1,5 @@
+use crate::compiler::symbol_table::FunctionRef;
+
 #[derive(Debug)]
 pub struct Root {
     pub(crate) functions: Vec<FunctionDefinition>,
@@ -18,9 +20,9 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub struct FunctionDefinition {
-    pub(crate) name: String,
-    pub(crate) compound: CompoundExpr,
-    pub(crate) return_ty: Type,
+    pub sym: FunctionRef,
+
+    pub compound: CompoundExpr,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

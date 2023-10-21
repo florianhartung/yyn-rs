@@ -1,33 +1,34 @@
-use std::collections::HashMap;
 use std::path::Path;
+use std::rc::Rc;
 
-use anyhow::Context as AnyhowContext;
 use anyhow::{anyhow, Result};
+use anyhow::{bail, Context as AnyhowContext};
+use generational_arena::Arena;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::types::{BasicMetadataTypeEnum, BasicType};
 use inkwell::values::FunctionValue;
 
-use crate::compiler::ast_analyzer::symbol_table::SymbolTable;
-use crate::compiler::ast_analyzer::AnalyzedAST;
 use crate::compiler::codegen::types::{CompoundReturnType, Type};
 use crate::compiler::parser::ast::{CompoundExpr, Expr, FunctionDefinition, Root};
+use crate::compiler::semantic_analysis::AnalyzedAST;
+use crate::compiler::symbol_table::{FunctionRef, Sym};
 
 mod types;
 
-pub fn generate(ast_root: AnalyzedAST, llvm_ir_out: &Path) -> Result<()> {
-    let context = Context::create();
+pub fn generate(ast_root: AnalyzedAST, sym: Sym, llvm_ir_out: &Path) -> Result<()> {
+    let context = Rc::new(Context::create());
 
     let builder = context.create_builder();
     let module = context.create_module("main_module");
 
-    let mut codegen = Cx {
+    let mut codegen = CodegenContext {
         context: &context,
         builder,
         module,
-        table: ast_root.table,
-        functions: HashMap::new(),
+        sym,
+        functions: Arena::new(),
     };
 
     ast_root.ast.codegen(&mut codegen)?;
@@ -40,20 +41,49 @@ pub fn generate(ast_root: AnalyzedAST, llvm_ir_out: &Path) -> Result<()> {
 }
 
 /// Context for code generation
-pub struct Cx<'cx> {
+pub struct CodegenContext<'cx> {
     context: &'cx Context,
     builder: Builder<'cx>,
     module: Module<'cx>,
-    table: SymbolTable,
-    functions: HashMap<String, FunctionValue<'cx>>,
+    sym: Sym,
+    // functions: HashMap<String, FunctionValue<'cx>>,
+    functions: Arena<FunctionValue<'cx>>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct CodegenFunctionDataRef(generational_arena::Index);
+
+impl<'ctx> CodegenContext<'ctx> {
+    fn attach_function_value(
+        &mut self,
+        fn_ref: FunctionRef,
+        function_value: FunctionValue<'ctx>,
+    ) -> Result<CodegenFunctionDataRef> {
+        let idx = self.functions.insert(function_value);
+        let fn_value_ref = CodegenFunctionDataRef(idx);
+
+        self.sym
+            .get_function_mut(fn_ref)
+            .attach_codegen_data(fn_value_ref)?;
+
+        Ok(fn_value_ref)
+    }
 }
 
 impl Root {
-    fn codegen(self, codegen: &mut Cx) -> Result<()> {
-        // First generate all function types
+    fn codegen(self, codegen: &mut CodegenContext) -> Result<()> {
+        // First generate all LLVM function types so they are already available when building call expressions later
+        // The types are collected into codegen.functions
         for f in &self.functions {
-            let fn_value = f.generate_fn_value(codegen)?;
-            codegen.functions.insert(f.name.clone(), fn_value);
+            let fn_value = {
+                let fn_sym = codegen.sym.get_function(f.sym);
+
+                let return_ty = Type::from_ast_type(&fn_sym.return_ty, codegen);
+                let fn_ty = return_ty.fn_type(&[], false);
+                codegen.module.add_function(&fn_sym.name, fn_ty, None)
+            };
+
+            let _fn_value_ref = codegen.attach_function_value(f.sym, fn_value)?;
         }
 
         self.functions
@@ -64,32 +94,31 @@ impl Root {
 }
 
 impl FunctionDefinition {
-    fn generate_fn_value<'cx>(&self, codegen: &Cx<'cx>) -> Result<FunctionValue<'cx>> {
-        let return_ty = Type::from_ast_type(&self.return_ty, codegen);
-        let fn_ty = return_ty.fn_type(&[], false);
-        let fn_value = codegen.module.add_function(&self.name, fn_ty, None);
+    fn codegen(self, codegen: &CodegenContext) -> Result<()> {
+        let fn_sym = codegen.sym.get_function(self.sym);
 
-        Ok(fn_value)
-    }
-
-    fn codegen(self, codegen: &Cx) -> Result<()> {
+        let Some(fn_value_ref) = fn_sym.codegen_data_ref else {
+            panic!("LLVM Function value is not generated yet, but should have been. Lazy function value generation is not supported yet")
+        };
         let fn_value = codegen
             .functions
-            .get(&self.name)
-            .expect("function value to exist");
+            .get(fn_value_ref.0)
+            .expect("the function value to exist as the index came from a CodegenDataRef");
+
         let block = codegen.context.append_basic_block(*fn_value, "");
         codegen.builder.position_at_end(block);
+
         let actual_ret_ty = self.compound.codegen(codegen)?.into_type(codegen);
         codegen.builder.clear_insertion_position();
 
-        // if actual_ret_ty != fn_value.get_type().get_return_type() {
-        //     bail!(
-        //         "Expected function '{}' to return type '{:?}', but it actually returns a '{:?}'",
-        //         &self.name,
-        //         return_ty,
-        //         actual_ret_ty,
-        //     );
-        // }
+        if actual_ret_ty.to_basic_type_enum() != fn_value.get_type().get_return_type() {
+            bail!(
+                "Expected function '{}' to return type '{:?}', but it actually returns a '{:?}'",
+                fn_sym.name,
+                fn_value.get_type().get_return_type(),
+                actual_ret_ty,
+            );
+        }
 
         Ok(())
     }
@@ -97,7 +126,7 @@ impl FunctionDefinition {
 
 impl CompoundExpr {
     /// Returns the type of value returned by this compound
-    fn codegen<'ctx>(self, codegen: &Cx<'ctx>) -> Result<CompoundReturnType<'ctx>> {
+    fn codegen<'ctx>(self, codegen: &CodegenContext<'ctx>) -> Result<CompoundReturnType<'ctx>> {
         for e in self.expressions {
             match e {
                 // If there is a return statement, cancel code generation of this compound, generate the return statement and return the type of the return value
@@ -122,7 +151,10 @@ impl CompoundExpr {
     }
 }
 
-fn generate_explicit_return<'ctx>(codegen: &Cx<'ctx>, value: u32) -> Result<Type<'ctx>> {
+fn generate_explicit_return<'ctx>(
+    codegen: &CodegenContext<'ctx>,
+    value: u32,
+) -> Result<Type<'ctx>> {
     let return_ty = codegen.context.i32_type();
     let return_val = return_ty.const_int(value as u64, false);
     codegen.builder.build_return(Some(&return_val))?;
@@ -131,7 +163,7 @@ fn generate_explicit_return<'ctx>(codegen: &Cx<'ctx>, value: u32) -> Result<Type
 }
 
 impl Expr {
-    fn codegen(self, codegen: &Cx) -> Result<()> {
+    fn codegen(self, codegen: &CodegenContext) -> Result<()> {
         match self {
             Expr::Exit(exit_code) => {
                 let void_ty = codegen.context.void_type();

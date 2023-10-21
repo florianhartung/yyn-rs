@@ -9,3 +9,4 @@ edition = "2021"
 anyhow = "1.0.75"
 itertools = "0.11.0"
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm13-0"], default-features = false }
+generational-arena = "0.2.9"

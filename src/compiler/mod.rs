@@ -2,10 +2,13 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-mod ast_analyzer;
+use crate::compiler::symbol_table::Sym;
+
 mod codegen;
 mod lexer;
 mod parser;
+mod semantic_analysis;
+pub mod symbol_table;
 
 // TODO add compiler options/flags
 
@@ -15,10 +18,12 @@ pub fn compile(src: &Path, llvm_ir_out: &Path) -> Result<()> {
     let tokens = lexer::tokenize(&src_code)?;
     dbg!(&tokens);
 
-    let ast_root = parser::parse(tokens)?;
+    let sym = Sym::new();
+
+    let ast_root = parser::parse(tokens, sym.clone())?;
     dbg!(&ast_root);
 
-    let analyzed_ast_root = ast_analyzer::analyze_ast(ast_root)?;
+    let analyzed_ast_root = semantic_analysis::analyse(ast_root, sym.clone())?;
 
-    codegen::generate(analyzed_ast_root, &llvm_ir_out)
+    codegen::generate(analyzed_ast_root, sym.clone(), llvm_ir_out)
 }

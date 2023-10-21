@@ -1,17 +1,25 @@
+use anyhow::Result;
 use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 
+use anyhow::Context;
+
 mod compiler;
 
-fn main() {
-    let Some(src_file) = env::args().skip(1).next() else {
+fn main() -> Result<()> {
+    // First argument is program name, it can be skipped
+    let mut args = env::args().skip(1);
+
+    let Some(src_file): Option<PathBuf> = args.next().map(PathBuf::from).into() else {
         println!("Please specify a path to a file containing yyn source code");
         exit(1);
     };
 
-    let src_file = PathBuf::from(src_file);
-    let out_file = src_file.with_extension("ll");
+    let dest_file = args
+        .next()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| src_file.with_extension("ll"));
 
-    compiler::compile(&src_file, &out_file).expect("Failed compilation");
+    compiler::compile(&src_file, &dest_file).context("Failed compilation")
 }
