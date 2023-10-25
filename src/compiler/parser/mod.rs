@@ -4,7 +4,8 @@ use anyhow::{anyhow, bail, Result};
 
 use crate::compiler::lexer::token::{Keyword, Token};
 use crate::compiler::parser::ast::Type;
-use crate::compiler::symbol_table::{Function, Sym};
+use crate::compiler::symbol_table::Function;
+use crate::compiler::symbol_table::Sym;
 
 pub mod ast;
 

@@ -1,4 +1,5 @@
-use crate::compiler::symbol_table::FunctionRef;
+use crate::compiler::ref_arena::ArenaRef;
+use crate::compiler::symbol_table::Function;
 
 #[derive(Debug)]
 pub struct Root {
@@ -20,7 +21,7 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub struct FunctionDefinition {
-    pub sym: FunctionRef,
+    pub sym: ArenaRef<Function>,
 
     pub compound: CompoundExpr,
 }

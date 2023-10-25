@@ -2,11 +2,12 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::compiler::symbol_table::Sym;
+use symbol_table::Sym;
 
 mod codegen;
 mod lexer;
 mod parser;
+mod ref_arena;
 mod semantic_analysis;
 pub mod symbol_table;
 

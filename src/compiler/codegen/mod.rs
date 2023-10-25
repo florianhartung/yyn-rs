@@ -1,9 +1,9 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
 use anyhow::{anyhow, Result};
 use anyhow::{bail, Context as AnyhowContext};
-use generational_arena::Arena;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
@@ -12,8 +12,10 @@ use inkwell::values::FunctionValue;
 
 use crate::compiler::codegen::types::{CompoundReturnType, Type};
 use crate::compiler::parser::ast::{CompoundExpr, Expr, FunctionDefinition, Root};
+use crate::compiler::ref_arena::ArenaRef;
 use crate::compiler::semantic_analysis::AnalyzedAST;
-use crate::compiler::symbol_table::{FunctionRef, Sym};
+use crate::compiler::symbol_table::Function;
+use crate::compiler::symbol_table::Sym;
 
 mod types;
 
@@ -28,7 +30,7 @@ pub fn generate(ast_root: AnalyzedAST, sym: Sym, llvm_ir_out: &Path) -> Result<(
         builder,
         module,
         sym,
-        functions: Arena::new(),
+        functions: HashMap::new(),
     };
 
     ast_root.ast.codegen(&mut codegen)?;
@@ -46,44 +48,40 @@ pub struct CodegenContext<'cx> {
     builder: Builder<'cx>,
     module: Module<'cx>,
     sym: Sym,
-    // functions: HashMap<String, FunctionValue<'cx>>,
-    functions: Arena<FunctionValue<'cx>>,
+    functions: HashMap<String, FunctionValue<'cx>>,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct CodegenFunctionDataRef(generational_arena::Index);
-
-impl<'ctx> CodegenContext<'ctx> {
-    fn attach_function_value(
+impl<'cx> CodegenContext<'cx> {
+    /// Fails if codegen data is already attached
+    pub fn generate_function_value<'ctx>(
         &mut self,
-        fn_ref: FunctionRef,
-        function_value: FunctionValue<'ctx>,
-    ) -> Result<CodegenFunctionDataRef> {
-        let idx = self.functions.insert(function_value);
-        let fn_value_ref = CodegenFunctionDataRef(idx);
+        fn_sym: &ArenaRef<Function>,
+    ) -> Result<FunctionValue> {
+        // Get information from symbol table
+        let fn_sym = fn_sym.get();
 
-        self.sym
-            .get_function_mut(fn_ref)
-            .attach_codegen_data(fn_value_ref)?;
+        // Check if function value is generated already
+        if self.functions.get(&fn_sym.name).is_some() {
+            bail!("Failed to attach new function value to function {}. It already has data attached to it.", fn_sym.name);
+        }
 
-        Ok(fn_value_ref)
+        // Generate function value
+        let return_ty = Type::from_ast_type(&fn_sym.return_ty, self);
+        let fn_ty = return_ty.fn_type(&[], false);
+        let fn_value = self.module.add_function(&fn_sym.name, fn_ty, None);
+
+        self.functions.insert(fn_sym.name.clone(), fn_value);
+
+        Ok(fn_value)
     }
 }
 
 impl Root {
     fn codegen(self, codegen: &mut CodegenContext) -> Result<()> {
         // First generate all LLVM function types so they are already available when building call expressions later
-        // The types are collected into codegen.functions
+        // They are collected into the filed `codegen.functions`
         for f in &self.functions {
-            let fn_value = {
-                let fn_sym = codegen.sym.get_function(f.sym);
-
-                let return_ty = Type::from_ast_type(&fn_sym.return_ty, codegen);
-                let fn_ty = return_ty.fn_type(&[], false);
-                codegen.module.add_function(&fn_sym.name, fn_ty, None)
-            };
-
-            let _fn_value_ref = codegen.attach_function_value(f.sym, fn_value)?;
+            codegen.generate_function_value(&f.sym)?;
         }
 
         self.functions
@@ -95,15 +93,11 @@ impl Root {
 
 impl FunctionDefinition {
     fn codegen(self, codegen: &CodegenContext) -> Result<()> {
-        let fn_sym = codegen.sym.get_function(self.sym);
+        let fn_sym = self.sym.get();
 
-        let Some(fn_value_ref) = fn_sym.codegen_data_ref else {
+        let Some(fn_value) = codegen.functions.get(&fn_sym.name) else {
             panic!("LLVM Function value is not generated yet, but should have been. Lazy function value generation is not supported yet")
         };
-        let fn_value = codegen
-            .functions
-            .get(fn_value_ref.0)
-            .expect("the function value to exist as the index came from a CodegenDataRef");
 
         let block = codegen.context.append_basic_block(*fn_value, "");
         codegen.builder.position_at_end(block);
@@ -201,3 +195,5 @@ impl Expr {
         }
     }
 }
+
+impl Function {}

@@ -1,9 +1,9 @@
-use anyhow::Result;
 use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 
 use anyhow::Context;
+use anyhow::Result;
 
 mod compiler;
 
